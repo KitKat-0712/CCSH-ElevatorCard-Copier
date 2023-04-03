@@ -54,21 +54,6 @@ void displayClear() {
     display.display();
 }
 
-void setup() {
-    pinMode(8, INPUT_PULLUP);
-
-    Serial.begin(9600); 
-    SPI.begin();
-    mfrc522.PCD_Init();
-    for(int i=0; i<6; i++) {
-        key.keyByte[i] = 0xFF;
-    }
-    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-    displayClear();
-    display.setTextColor(1);
-    display.setCursor(0, 0);
-}
-
 void delayAnimation() {
     delay(DELAY_TIME);
     displayClear();
@@ -167,6 +152,21 @@ byte bccCalculator(byte uidArray[]) {
         temp ^= uidArray[i];
     }
     return temp;
+}
+
+void setup() {
+    pinMode(8, INPUT_PULLUP);
+
+    Serial.begin(9600); 
+    SPI.begin();
+    mfrc522.PCD_Init();
+    for(int i=0; i<6; i++) {
+        key.keyByte[i] = 0xFF;
+    }
+    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+    displayClear();
+    display.setTextColor(1);
+    display.setCursor(0, 0);
 }
 
 void loop() {
