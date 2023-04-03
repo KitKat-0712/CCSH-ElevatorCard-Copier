@@ -1,12 +1,12 @@
-// 2023/03/15 Sun.
+// 2023/04/04 Tue.
 
 #include <stdio.h>
-#include <MFRC522.h>
+#include <string.h>
 #include <SPI.h>
-#include <LiquidCrystal_PCF8574.h>
-
-#define RST_PIN 9          
-#define SS_PIN 10
+#include <Wire.h> 
+#include <MFRC522.h>
+#include <Adafruit_GFX.h> 
+#include <Adafruit_SSD1306.h> 
 #define DELAY_TIME 3000
 
 byte theUID[4];
@@ -17,41 +17,75 @@ bool isUID = true;
 bool isCopyMode = false;
 bool isRead = false;
 
-LiquidCrystal_PCF8574 lcd(0x27);
-MFRC522 mfrc522(SS_PIN, RST_PIN);
+Adafruit_SSD1306 display(128, 64, &Wire, -1);
+MFRC522 mfrc522(10, 9);
 MFRC522::MIFARE_Key key;
 MFRC522::StatusCode status;
+
+void displayPrint
+(
+    const bool clearDisplay,
+    const uint8_t fontSize, 
+    const char str[],
+    uint16_t x,
+    uint16_t y
+)
+{
+    if(clearDisplay) displayClear();
+    
+    if(x == -1)  // default
+        x = display.getCursorX();
+    else if(x == -2) // align horizontal center
+        x = int((128-(6*fontSize*strlen(str)-fontSize))/2);
+
+    if(y == -1) // default
+        y = display.getCursorY(); 
+    else if(y == -2) // align vertical center (for blue area)
+        y = 39-int(7*fontSize/2);
+
+    display.setCursor(x, y);
+    display.setTextSize(fontSize);
+    display.print(str);
+    display.display();
+}
+
+void displayClear() {
+    display.clearDisplay();
+    display.display();
+}
 
 void setup() {
     pinMode(8, INPUT_PULLUP);
 
     Serial.begin(9600); 
     SPI.begin();
-    lcd.begin(16,2);
     mfrc522.PCD_Init();
     for(int i=0; i<6; i++) {
         key.keyByte[i] = 0xFF;
     }
+    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+    displayClear();
+    display.setTextColor(1);
+    display.setCursor(0, 0);
 }
 
 void delayAnimation() {
     delay(DELAY_TIME);
-    lcd.clear();
-    lcd.setBacklight(0);
+    displayClear();
 }
 
 void dumpUID() {
-    lcd.setCursor(0,1);
+    display.setCursor(0, 22);
     char temp[4];
-    for(int i=0; i<5; i++) {
-        snprintf(temp, 4, "%02X ", i==4 ? bccCalculator(mfrc522.uid.uidByte) : mfrc522.uid.uidByte[i]);            
-        lcd.print(temp);
+    for(int i=0; i<4; i++) {
+        snprintf(temp, 4, "%02X ", mfrc522.uid.uidByte[i]);
+        if(i==2) display.setCursor(0, 40);
+        displayPrint(false, 2, temp, -1, -1);
     }
 }
 
 void cloneUID(bool isELEV) {
-    lcd.setCursor(0,0);
-    lcd.print(isELEV ? "ELEV " : "COPY ");
+    if(!isRead) displayPrint(true, 2, isELEV?"":"COPY", -2, 0);
     
     byte uidArray[4];
     for(int i=0; i<4; i++) {
@@ -65,7 +99,8 @@ void cloneUID(bool isELEV) {
     
     if(isUID) {
         if(mfrc522.MIFARE_SetUid(uidArray, 0x04, true)) {
-            lcd.print(" UID 0T");
+            displayPrint(true, 2, "UID 0T", 0, 0);
+            displayPrint(false, 3, "Success", -2, -2);
             delayAnimation();
             isCopyMode = false;
             isRead = false;
@@ -79,10 +114,11 @@ void cloneUID(bool isELEV) {
     else {
         status = (MFRC522::StatusCode) mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, 3, &key, &(mfrc522.uid));
         if(status == MFRC522::STATUS_OK) {
-            lcd.print("CUID 0T ");
+            displayPrint(true, 2, "CUID 0T ", 0, 0);
         }
         else{
-            lcd.print("CUID 0F");
+            displayPrint(true, 2, "CUID 0F", 0, 0);
+            displayPrint(false, 3, "Fail", -2, -2);
             delayAnimation();
             return;
         }
@@ -102,10 +138,12 @@ void cloneUID(bool isELEV) {
 
         status = (MFRC522::StatusCode) mfrc522.MIFARE_Write(0, blockArray, 16);
         if (status == MFRC522::STATUS_OK) {
-            lcd.print("1T");
+            displayPrint(false, 2, "1T", -1, -1);
+            displayPrint(false, 3, "Success", -2, -2);
         }
         else {
-            lcd.print("1F");
+            displayPrint(false, 2, "1F", -1, -1);
+            displayPrint(false, 3, "Fail", -2, -2);
         }
         isUID = true;
         isCopyMode = false;
@@ -138,26 +176,18 @@ void loop() {
         if(isRead) {
             while(true) {
                 if(mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
-                    lcd.clear();
-                    dumpUID();
+                    displayClear();
                     cloneUID(false);
                     return;
                 }
             }
         }
         else {
-            lcd.setBacklight(255);
-            lcd.setCursor(6,0);
-            lcd.print("COPY");
-            lcd.setCursor(6,1);
-            lcd.print("MODE");
+            displayPrint(true, 2, "COPY MODE", -2, 0);
             
             while(true) {
                 if(mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
-                    lcd.clear();
-                    lcd.setCursor(0,0);
-                    lcd.print("Read ");
-                    lcd.print(isUIDF() ? " UID" : "CUID");
+                    displayPrint(true, 2, isUIDF()?"READ UID":"READ CUID", -2, 0);
                     
                     dumpUID();
                     for(int i=0; i<4; i++) {
@@ -166,8 +196,7 @@ void loop() {
 
                     while(true) {
                         if(digitalRead(8) == LOW) {
-                            lcd.setCursor(13,0);
-                            lcd.print("###");
+                            displayPrint(false, 6, "#", 76, -2);
                             isCopyMode = true;
                             isRead = true;
                             return;
@@ -182,8 +211,6 @@ void loop() {
             delay(50);
             return;
         }
-        lcd.setBacklight(255);
-        dumpUID();
         cloneUID(true);
     }
 }
